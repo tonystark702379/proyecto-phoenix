@@ -149,3 +149,133 @@ class SistemaInspeccionGloria:
     def n_procesados(self) -> int:
         return len(self._registro)
 
+
+
+# =============================================================================
+# SECCION 12: MENUS
+# =============================================================================
+
+def ingresar_insumo_manual() -> tuple:
+    print()
+    while True:
+        nombre = input("  Nombre del insumo       : ").strip()
+        if nombre:
+            break
+        print("  El nombre no puede estar vacio.")
+    while True:
+        try:
+            lote = int(input("  Tamano del lote (unid.) : "))
+            if lote >= 2:
+                break
+            print("  El lote debe ser al menos 2.")
+        except ValueError:
+            print("  Ingrese un numero entero valido.")
+    print("  Tipos validos: nuevo | prueba_industrial | homologado")
+    while True:
+        tipo = input("  Tipo de proveedor       : ").strip().lower()
+        if tipo in Proveedor.TIPOS_VALIDOS:
+            break
+        print(f"  Opciones validas: {', '.join(Proveedor.TIPOS_VALIDOS)}")
+    return nombre, lote, tipo
+
+
+def submenu_cola(sistema: SistemaInspeccionGloria):
+    while True:
+        print()
+        print("  GESTION DE COLA (FIFO)")
+        print("  1. Encolar insumo manualmente")
+        print("  2. Cargar casos de prueba")
+        print("  3. Ver cola actual")
+        print("  4. Procesar toda la cola")
+        print("  5. Volver")
+        opcion = input("\n  Opcion: ").strip()
+        if opcion == "1":
+            try:
+                nombre, lote, tipo = ingresar_insumo_manual()
+                sistema.encolar_insumo(nombre, lote, tipo)
+            except Exception as e:
+                print(f"  Error inesperado: {e}")
+        elif opcion == "2":
+            sistema.cargar_casos_prueba()
+        elif opcion == "3":
+            sistema.mostrar_cola()
+        elif opcion == "4":
+            sistema.procesar_cola_completa()
+        elif opcion == "5":
+            break
+        else:
+            print("  Opcion no valida.")
+        input("\n  ENTER para continuar...")
+
+
+def submenu_lista(sistema: SistemaInspeccionGloria):
+    while True:
+        print()
+        print("  GESTION DE LISTA (REGISTRO DIARIO)")
+        print("  1. Ver registro completo")
+        print("  2. Buscar por tipo de proveedor")
+        print("  3. Filtrar por tipo de control")
+        print("  4. Ver lista ordenada por lote")
+        print("  5. Buscar insumo por nombre")
+        print("  6. Resumen estadistico")
+        print("  7. Volver")
+        opcion = input("\n  Opcion: ").strip()
+        if opcion == "1":
+            sistema.mostrar_registro()
+        elif opcion == "2":
+            print("  Opciones: nuevo | prueba_industrial | homologado")
+            tipo = input("  Tipo a buscar: ").strip().lower()
+            sistema.buscar_por_proveedor(tipo)
+        elif opcion == "3":
+            print("  Opciones: SOLO INSPECCION | INSPECCION + MUESTREO")
+            ctrl = input("  Control a filtrar: ").strip()
+            sistema.filtrar_por_control(ctrl)
+        elif opcion == "4":
+            sistema.mostrar_ordenado_por_lote()
+        elif opcion == "5":
+            nombre = input("  Nombre del insumo: ").strip()
+            sistema.buscar_insumo_por_nombre(nombre)
+        elif opcion == "6":
+            sistema.mostrar_estadisticas()
+        elif opcion == "7":
+            break
+        else:
+            print("  Opcion no valida.")
+        input("\n  ENTER para continuar...")
+
+
+def menu_principal():
+    print("=" * 60)
+    print("   SISTEMA DE INSPECCION DE INSUMOS - GLORIA S.A.")
+    print("   Norma ISO 2859-1 / NTP-ISO 2859-1")
+    print("   Version 3 - Programacion Orientada a Objetos")
+    print("=" * 60)
+
+    sistema = SistemaInspeccionGloria()
+
+    while True:
+        print()
+        print(f"  Cola: {sistema.n_pendientes} pendiente(s) | "
+              f"Lista: {sistema.n_procesados} procesado(s)")
+        print()
+        print("  1. Gestionar COLA de insumos (FIFO)")
+        print("  2. Consultar LISTA (registro diario)")
+        print("  3. Salir")
+
+        opcion = input("\n  Opcion: ").strip()
+
+        if opcion == "1":
+            submenu_cola(sistema)
+        elif opcion == "2":
+            submenu_lista(sistema)
+        elif opcion == "3":
+            print()
+            print("  Resumen final de la sesion:")
+            sistema.mostrar_estadisticas()
+            print("  Sistema cerrado.")
+            print("=" * 60)
+            break
+        else:
+            print("  Opcion no valida.")
+
+
