@@ -465,7 +465,7 @@ def mostrar_resultado(resultado):
     print()
 
     if resultado["n_muestras"] == 0:
-        print("  ✅ CONTROL APLICABLE: SOLO INSPECCIÓN")
+        print(" CONTROL APLICABLE: SOLO INSPECCIÓN")
         print(f"  → {resultado['detalle']}")
     else:
         print(" CONTROL APLICABLE: INSPECCIÓN + MUESTREO")
