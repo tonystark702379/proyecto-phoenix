@@ -1,779 +1,697 @@
 
-### PARTE - 1
 
-from collections import deque
-from abc import ABC, abstractmethod
-
-# =============================================================================
-# SISTEMA DE INSPECCION DE INSUMOS - GLORIA S.A.
-# Version 3 - Programacion Orientada a Objetos
-# Norma ISO 2859-1 / NTP-ISO 2859-1
-# Curso: Fundamentos de Programacion 2
-# Temas: Clases y Objetos, Herencia, Polimorfismo, Clases Abstractas,
-#        Relaciones entre Clases, Manejo de Excepciones, Listas, Tuplas, Cadenas
-# =============================================================================
-
-
-# =============================================================================
-# SECCION 1: EXCEPCIONES PERSONALIZADAS
-# Unidad 4 - Manejo de excepciones
-# =============================================================================
-
-class LoteInvalidoError(Exception):
-    def __init__(self, lote):
-        super().__init__(f"Tamano de lote invalido: {lote}. Debe ser mayor o igual a 2.")
-        self.lote = lote
-
-class ProveedorInvalidoError(Exception):
-    def __init__(self, tipo):
-        super().__init__(f"Tipo de proveedor no reconocido: '{tipo}'.")
-        self.tipo = tipo
-
-class ColaVaciaError(Exception):
-    def __init__(self):
-        super().__init__("La cola esta vacia. No hay insumos pendientes.")
-
-class InsumoNoEncontradoError(Exception):
-    def __init__(self, nombre):
-        super().__init__(f"Insumo '{nombre}' no encontrado en el registro.")
-        self.nombre = nombre
-
-
-# =============================================================================
-# SECCION 2: TABLAS ISO 2859-1
-# Unidad 1 - Tuplas y listas
-# =============================================================================
+from collections import deque   
 
 TABLA_LETRAS_CODIGO = [
-    ((2,      8),          {"I": "A",  "II": "A",  "III": "B"}),
-    ((9,      15),         {"I": "A",  "II": "B",  "III": "C"}),
-    ((16,     25),         {"I": "B",  "II": "C",  "III": "D"}),
-    ((26,     50),         {"I": "C",  "II": "D",  "III": "E"}),
-    ((51,     90),         {"I": "C",  "II": "E",  "III": "F"}),
-    ((91,     150),        {"I": "D",  "II": "F",  "III": "G"}),
-    ((151,    280),        {"I": "E",  "II": "G",  "III": "H"}),
-    ((281,    500),        {"I": "F",  "II": "H",  "III": "J"}),
-    ((501,    1200),       {"I": "G",  "II": "J",  "III": "K"}),
-    ((1201,   3200),       {"I": "H",  "II": "K",  "III": "L"}),
-    ((3201,   10000),      {"I": "J",  "II": "L",  "III": "M"}),
-    ((10001,  35000),      {"I": "K",  "II": "M",  "III": "N"}),
-    ((35001,  150000),     {"I": "L",  "II": "N",  "III": "P"}),
-    ((150001, 500000),     {"I": "M",  "II": "P",  "III": "Q"}),
-    ((500001, float("inf"),{"I": "N",  "II": "Q",  "III": "R"})),
+    # (lote_min, lote_max):  {Nivel I,   Nivel II,   Nivel III}
+    ((2,        8),          {"I": "A",  "II": "A",  "III": "B"}),
+    ((9,        15),         {"I": "A",  "II": "B",  "III": "C"}),
+    ((16,       25),         {"I": "B",  "II": "C",  "III": "D"}),
+    ((26,       50),         {"I": "C",  "II": "D",  "III": "E"}),
+    ((51,       90),         {"I": "C",  "II": "E",  "III": "F"}),
+    ((91,       150),        {"I": "D",  "II": "F",  "III": "G"}),
+    ((151,      280),        {"I": "E",  "II": "G",  "III": "H"}),
+    ((281,      500),        {"I": "F",  "II": "H",  "III": "J"}),
+    ((501,      1200),       {"I": "G",  "II": "J",  "III": "K"}),
+    ((1201,     3200),       {"I": "H",  "II": "K",  "III": "L"}),
+    ((3201,     10000),      {"I": "J",  "II": "L",  "III": "M"}),
+    ((10001,    35000),      {"I": "K",  "II": "M",  "III": "N"}),
+    ((35001,    150000),     {"I": "L",  "II": "N",  "III": "P"}),
+    ((150001,   500000),     {"I": "M",  "II": "P",  "III": "Q"}),
+    ((500001,   float("inf"),{"I": "N",  "II": "Q",  "III": "R"})),
 ]
 
+
 TABLA_MUESTRAS = {
-    "A": 0, "B": 3,  "C": 5,   "D": 8,   "E": 13,
-    "F": 20,"G": 32, "H": 50,  "J": 80,  "K": 125,
-    "L": 200,"M": 315,"N": 500, "P": 800, "Q": 1250, "R": 2000,
+    "A":  0,    # Solo inspección (lotes muy pequeños)
+    "B":  3,
+    "C":  5,
+    "D":  8,
+    "E":  13,
+    "F":  20,
+    "G":  32,
+    "H":  50,
+    "J":  80,
+    "K":  125,
+    "L":  200,
+    "M":  315,
+    "N":  500,
+    "P":  800,
+    "Q":  1250,
+    "R":  2000,
 }
 
 
-# =============================================================================
-# SECCION 3: CLASE ABSTRACTA BASE
-# Unidad 2 - Clases abstractas e interfaces
-# =============================================================================
+cola_insumos_pendientes = deque()   # Cola vacía al iniciar el sistema
 
-class EntidadInspeccionable(ABC):
+
+registro_diario = []   # Lista vacía al iniciar el sistema
+
+
+def encolar_insumo(nombre, lote, tipo_proveedor):
     """
-    Clase abstracta base que define el contrato que deben cumplir
-    todos los elementos que pueden ser inspeccionados en el sistema.
-    Cualquier clase que herede de esta DEBE implementar los metodos abstractos.
+    FUNCIÓN DE COLA 1: Agrega un insumo al final de la cola de espera.
+
+    Simula la llegada de un insumo a planta: se pone al final de la fila
+    y espera su turno para ser inspeccionado.
+
+    Operación usada: deque.append() → agrega al FINAL (cola FIFO)
+
+    Parámetros:
+        nombre         (str): Nombre del insumo
+        lote           (int): Tamaño del lote
+        tipo_proveedor (str): Tipo de proveedor
     """
-
-    @abstractmethod
-    def get_descripcion(self) -> str:
-        pass
-
-    @abstractmethod
-    def get_nivel_inspeccion(self) -> str:
-        pass
-
-    @abstractmethod
-    def es_critico(self) -> bool:
-        pass
-
-
-# =============================================================================
-# SECCION 4: CLASE PROVEEDOR
-# Unidad 1 - Clases y objetos
-# =============================================================================
-
-class Proveedor:
-    """
-    Representa a un proveedor de insumos de Gloria S.A.
-    Encapsula el tipo y el nivel de inspeccion que le corresponde
-    segun la norma ISO 2859-1.
-    Relacion: un Insumo TIENE UN Proveedor (composicion).
-    """
-
-    TIPOS_VALIDOS = ("nuevo", "prueba_industrial", "homologado")
-
-    NIVELES = {
-        "nuevo":            ("III", "Reforzado  - Sin historial de calidad"),
-        "prueba_industrial": ("II",  "Normal     - En evaluacion"),
-        "homologado":       ("I",   "Reducido   - Historial verificado"),
+    # Cada insumo se guarda como un diccionario con sus datos
+    insumo = {
+        "insumo":         nombre,
+        "tamanio_lote":   lote,
+        "tipo_proveedor": tipo_proveedor,
     }
-
-    def __init__(self, tipo: str):
-        tipo = tipo.strip().lower()
-        if tipo not in self.TIPOS_VALIDOS:
-            raise ProveedorInvalidoError(tipo)
-        self._tipo = tipo
-        self._nivel, self._descripcion = self.NIVELES[tipo]
-
-    @property
-    def tipo(self) -> str:
-        return self._tipo
-
-    @property
-    def nivel(self) -> str:
-        return self._nivel
-
-    @property
-    def descripcion_nivel(self) -> str:
-        return self._descripcion
-
-    def __str__(self) -> str:
-        return f"{self._tipo.capitalize()} (Nivel {self._nivel} - {self._descripcion})"
+    cola_insumos_pendientes.append(insumo)   
+    print(f"  ✔ '{nombre}' encolado. Posición en fila: {len(cola_insumos_pendientes)}")
 
 
-### PARTE - 2
-
-# =============================================================================
-#SECCION 5: CLASE INSUMO (hereda de EntidadInspeccionable)
-# Unidad 1 y 2 - Clases, objetos, herencia
-# =============================================================================
-
-class Insumo(EntidadInspeccionable):
+def desencolar_insumo():
     """
-    Representa un insumo que llega a la planta de Gloria S.A.
-    Hereda de EntidadInspeccionable e implementa sus metodos abstractos.
-    Relacion de composicion con Proveedor: un Insumo TIENE UN Proveedor.
+    FUNCIÓN DE COLA 2: Saca al primer insumo de la cola para inspeccionarlo.
+
+    Comportamiento FIFO: siempre se atiende al que llegó primero.
+
+    Operación usada: deque.popleft() → saca del FRENTE (cola FIFO)
+
+    Retorna:
+        dict: Datos del insumo que fue atendido, o None si la cola está vacía.
     """
-
-    def __init__(self, nombre: str, tamanio_lote: int, tipo_proveedor: str):
-        nombre = nombre.strip()
-        if not nombre:
-            raise ValueError("El nombre del insumo no puede estar vacio.")
-        if tamanio_lote < 2:
-            raise LoteInvalidoError(tamanio_lote)
-
-        self._nombre       = nombre
-        self._tamanio_lote = tamanio_lote
-        self._proveedor    = Proveedor(tipo_proveedor)   # composicion
-
-    @property
-    def nombre(self) -> str:
-        return self._nombre
-
-    @property
-    def tamanio_lote(self) -> int:
-        return self._tamanio_lote
-
-    @property
-    def proveedor(self) -> Proveedor:
-        return self._proveedor
-
-    # Implementacion de metodos abstractos
-    def get_descripcion(self) -> str:
-        return (f"Insumo: {self._nombre} | "
-                f"Lote: {self._tamanio_lote} unidades | "
-                f"Proveedor: {self._proveedor.tipo}")
-
-    def get_nivel_inspeccion(self) -> str:
-        return self._proveedor.nivel
-
-    def es_critico(self) -> bool:
-        return self._proveedor.tipo == "nuevo" and self._tamanio_lote > 500
-
-    def __str__(self) -> str:
-        return f"{self._nombre} (lote={self._tamanio_lote}, proveedor={self._proveedor.tipo})"
+    if len(cola_insumos_pendientes) == 0:
+        print(" La cola está vacía. No hay insumos pendientes.")
+        return None
+    insumo = cola_insumos_pendientes.popleft()   
+    return insumo
 
 
-# =============================================================================
-# SECCION 6: CLASE RESULTADO DE INSPECCION
-# Unidad 1 - Clases y objetos
-# Unidad 3 - Relaciones entre clases (Resultado USA UN Insumo)
-# =============================================================================
-
-class ResultadoInspeccion:
+def mostrar_cola():
     """
-    Encapsula el resultado completo del analisis de un insumo
-    segun la norma ISO 2859-1.
-    Relacion de dependencia: ResultadoInspeccion USA UN Insumo.
+    FUNCIÓN DE COLA 3: Muestra todos los insumos que están esperando en la cola.
+
+    No elimina ningún elemento — solo permite visualizar el estado actual.
     """
-
-    def __init__(self, insumo: Insumo, letra_codigo: str, n_muestras: int):
-        self._insumo       = insumo
-        self._letra_codigo = letra_codigo
-        self._n_muestras   = n_muestras
-        self._tipo_control = "SOLO INSPECCION" if n_muestras == 0 else "INSPECCION + MUESTREO"
-
-    @property
-    def insumo(self) -> Insumo:
-        return self._insumo
-
-    @property
-    def letra_codigo(self) -> str:
-        return self._letra_codigo
-
-    @property
-    def n_muestras(self) -> int:
-        return self._n_muestras
-
-    @property
-    def tipo_control(self) -> str:
-        return self._tipo_control
-
-    def get_detalle(self) -> str:
-        if self._n_muestras == 0:
-            return "Revision documental e inspeccion fisica. No se requiere muestreo."
-        return f"Se deben tomar {self._n_muestras} muestras para analisis de laboratorio."
-
-    def to_dict(self) -> dict:
-        return {
-            "insumo":           self._insumo.nombre,
-            "tamanio_lote":     self._insumo.tamanio_lote,
-            "tipo_proveedor":   self._insumo.proveedor.tipo,
-            "nivel_inspeccion": f"Nivel {self._insumo.proveedor.nivel} - {self._insumo.proveedor.descripcion_nivel}",
-            "letra_codigo":     self._letra_codigo,
-            "n_muestras":       self._n_muestras,
-            "tipo_control":     self._tipo_control,
-            "es_critico":       self._insumo.es_critico(),
-        }
-
-    def __str__(self) -> str:
-        return (f"{self._insumo.nombre} -> {self._tipo_control} "
-                f"(letra={self._letra_codigo}, muestras={self._n_muestras})")
-
-
-# =============================================================================
-# SECCION 7: CLASES DE PROVEEDOR CON HERENCIA Y POLIMORFISMO
-# Unidad 2 - Herencia y polimorfismo
-# =============================================================================
-
-class ProveedorNuevo(Proveedor):
-    """
-    Proveedor nuevo sin historial. Hereda de Proveedor.
-    Sobreescribe get_descripcion para comportamiento especifico.
-    """
-    def __init__(self):
-        super().__init__("nuevo")
-
-    def get_recomendacion(self) -> str:
-        return "Aplicar inspeccion completa. Solicitar certificados de calidad al proveedor."
-
-
-class ProveedorPrueba(Proveedor):
-    """
-    Proveedor en etapa de prueba industrial. Hereda de Proveedor.
-    """
-    def __init__(self):
-        super().__init__("prueba_industrial")
-
-    def get_recomendacion(self) -> str:
-        return "Mantener seguimiento. Evaluar conformidad para posible homologacion."
-
-
-class ProveedorHomologado(Proveedor):
-    """
-    Proveedor homologado con historial verificado. Hereda de Proveedor.
-    """
-    def __init__(self):
-        super().__init__("homologado")
-
-    def get_recomendacion(self) -> str:
-        return "Inspeccion reducida. Mantener actualizados los registros de conformidad."
-
-
-def crear_proveedor(tipo: str) -> Proveedor:
-    """
-    Polimorfismo: devuelve la subclase correcta segun el tipo.
-    El codigo que llama a esta funcion no necesita saber que subclase recibe.
-    """
-    tipo = tipo.strip().lower()
-    if tipo == "nuevo":
-        return ProveedorNuevo()
-    elif tipo == "prueba_industrial":
-        return ProveedorPrueba()
-    elif tipo == "homologado":
-        return ProveedorHomologado()
-    else:
-        raise ProveedorInvalidoError(tipo)
-
-
-
-### PARTE - 3
-
-# =============================================================================
-#SECCION 8: CLASE MOTOR ISO 2859-1
-# Unidad 1 - Clases y objetos
-# Unidad 3 - Relaciones: SistemaInspeccion USA Motor ISO
-# =============================================================================
-
-class MotorISO28591:
-    """
-    Encapsula toda la logica de la norma ISO 2859-1.
-    Determina la letra codigo y el numero de muestras para un insumo dado.
-    """
-
-    @staticmethod
-    def obtener_letra_codigo(tamanio_lote: int, nivel: str) -> str:
-        for (lote_min, lote_max), niveles in TABLA_LETRAS_CODIGO:
-            if lote_min <= tamanio_lote <= lote_max:
-                return niveles[nivel]
-        raise LoteInvalidoError(tamanio_lote)
-
-    @staticmethod
-    def obtener_n_muestras(letra: str) -> int:
-        return TABLA_MUESTRAS.get(letra, 0)
-
-    def procesar(self, insumo: Insumo) -> ResultadoInspeccion:
-        try:
-            letra  = self.obtener_letra_codigo(insumo.tamanio_lote, insumo.proveedor.nivel)
-            n      = self.obtener_n_muestras(letra)
-            return ResultadoInspeccion(insumo, letra, n)
-        except LoteInvalidoError:
-            raise
-        except Exception as e:
-            raise RuntimeError(f"Error al procesar insumo '{insumo.nombre}': {e}")
-
-
-# =============================================================================
-# SECCION 9: CLASE COLA DE INSUMOS
-# Unidad 1 - Clases y objetos
-# Unidad 3 - Relaciones: SistemaInspeccion TIENE UNA ColaInsumos
-# =============================================================================
-
-class ColaInsumos:
-    """
-    Gestiona la fila de insumos pendientes de inspeccion.
-    Comportamiento FIFO usando deque.
-    """
-
-    def __init__(self):
-        self._cola: deque = deque()
-
-    def encolar(self, insumo: Insumo):
-        self._cola.append(insumo)
-        print(f"  '{insumo.nombre}' encolado. Posicion en fila: {len(self._cola)}")
-
-    def desencolar(self) -> Insumo:
-        if self.esta_vacia():
-            raise ColaVaciaError()
-        return self._cola.popleft()
-
-    def esta_vacia(self) -> bool:
-        return len(self._cola) == 0
-
-    def __len__(self) -> int:
-        return len(self._cola)
-
-    def __iter__(self):
-        return iter(self._cola)
-
-    def mostrar(self):
-        print()
-        print("=" * 60)
-        print("   COLA DE INSUMOS PENDIENTES")
-        print("=" * 60)
-        if self.esta_vacia():
-            print("  La cola esta vacia.")
-            return
-        print(f"  Insumos en espera: {len(self._cola)} (orden FIFO)")
-        print()
-        print(f"  {'Pos':<5} {'Insumo':<22} {'Lote':>7}  {'Proveedor':<18} {'Critico'}")
-        print("  " + "-" * 62)
-        for i, insumo in enumerate(self._cola, start=1):
-            critico = "SI" if insumo.es_critico() else "no"
-            print(f"  {i:<5} {insumo.nombre:<22} {insumo.tamanio_lote:>7}  "
-                  f"{insumo.proveedor.tipo:<18} {critico}")
-        print("=" * 60)
-
-
-# =============================================================================
-# SECCION 10: CLASE REGISTRO DIARIO
-# Unidad 1 - Clases y objetos, Listas
-# Unidad 3 - Relaciones: SistemaInspeccion TIENE UN RegistroDiario
-# =============================================================================
-
-class RegistroDiario:
-    """
-    Historial permanente de todos los insumos inspeccionados.
-    Ofrece busqueda, filtrado, ordenamiento y estadisticas.
-    """
-
-    def __init__(self):
-        self._registros: list = []
-
-    def agregar(self, resultado: ResultadoInspeccion):
-        self._registros.append(resultado)
-
-    def __len__(self) -> int:
-        return len(self._registros)
-
-    def esta_vacio(self) -> bool:
-        return len(self._registros) == 0
-
-    def buscar_por_proveedor(self, tipo: str) -> list:
-        return [r for r in self._registros
-                if r.insumo.proveedor.tipo == tipo]
-
-    def filtrar_por_control(self, tipo_control: str) -> list:
-        return [r for r in self._registros
-                if r.tipo_control == tipo_control.upper()]
-
-    def ordenar_por_lote(self, descendente: bool = True) -> list:
-        return sorted(self._registros,
-                      key=lambda r: r.insumo.tamanio_lote,
-                      reverse=descendente)
-
-    def buscar_por_nombre(self, nombre: str) -> ResultadoInspeccion:
-        nombre = nombre.strip().lower()
-        for r in self._registros:
-            if r.insumo.nombre.lower() == nombre:
-                return r
-        raise InsumoNoEncontradoError(nombre)
-
-    def mostrar_completo(self):
-        print()
-        print("=" * 70)
-        print("   REGISTRO DIARIO DE INSUMOS PROCESADOS")
-        print("=" * 70)
-        if self.esta_vacio():
-            print("  No se proceso ningun insumo.")
-            print("=" * 70)
-            return
-        print(f"  Total: {len(self._registros)} registro(s)")
-        print()
-        print(f"  {'N':<4} {'Insumo':<20} {'Lote':>6} {'Proveedor':<18} "
-              f"{'Control':<22} {'Muestras':>8} {'Critico'}")
-        print("  " + "-" * 84)
-        for i, r in enumerate(self._registros, start=1):
-            critico = "SI" if r.insumo.es_critico() else "-"
-            print(f"  {i:<4} {r.insumo.nombre:<20} {r.insumo.tamanio_lote:>6} "
-                  f"{r.insumo.proveedor.tipo:<18} {r.tipo_control:<22} "
-                  f"{r.n_muestras:>8} {critico:>7}")
-        print("=" * 70)
-
-    def mostrar_estadisticas(self):
-        print()
-        print("=" * 60)
-        print("   RESUMEN ESTADISTICO")
-        print("=" * 60)
-        if self.esta_vacio():
-            print("  No hay datos.")
-            print("=" * 60)
-            return
-
-        total = len(self._registros)
-        solo  = len(self.filtrar_por_control("SOLO INSPECCION"))
-        mues  = len(self.filtrar_por_control("INSPECCION + MUESTREO")  )
-        nuevos  = len(self.buscar_por_proveedor("nuevo"))
-        prueba  = len(self.buscar_por_proveedor("prueba_industrial"))
-        homol   = len(self.buscar_por_proveedor("homologado"))
-        criticos= len([r for r in self._registros if r.insumo.es_critico()])
-        lotes   = [r.insumo.tamanio_lote for r in self._registros]
-        muestras_total = sum(r.n_muestras for r in self._registros)
-
-        print(f"  Total procesados         : {total}")
-        print(f"  Solo inspeccion          : {solo}")
-        print(f"  Inspeccion + Muestreo    : {mues}")
-        print(f"  Proveedores nuevos       : {nuevos}")
-        print(f"  Proveedores en prueba    : {prueba}")
-        print(f"  Proveedores homologados  : {homol}")
-        print(f"  Insumos criticos         : {criticos}")
-        print(f"  Lote maximo              : {max(lotes)} unidades")
-        print(f"  Lote minimo              : {min(lotes)} unidades")
-        print(f"  Promedio de lote         : {sum(lotes)/total:.1f} unidades")
-        print(f"  Total muestras a tomar   : {muestras_total}")
-        print("=" * 60)
-
-
-#### PARTE - 4
-
-# =============================================================================
-#SECCION 11: CLASE PRINCIPAL DEL SISTEMA
-# Unidad 3 - Relaciones entre clases (composicion y dependencia)
-# SistemaInspeccion TIENE UNA ColaInsumos
-# SistemaInspeccion TIENE UN RegistroDiario
-# SistemaInspeccion USA UN MotorISO28591
-# =============================================================================
-
-class SistemaInspeccionGloria:
-    """
-    Clase principal que orquesta todo el sistema.
-    Gestiona la cola de insumos, el motor ISO y el registro diario.
-    """
-
-    CASOS_PRUEBA = [
-        ("Leche en polvo",      500,   "nuevo"),
-        ("Azucar refinada",     1500,  "prueba_industrial"),
-        ("Envases tetra brik",  10000, "homologado"),
-        ("Cultivo lactico",     20,    "nuevo"),
-        ("Estabilizante E471",  300,   "prueba_industrial"),
-        ("Sal yodada",          800,   "homologado"),
-    ]
-
-    def __init__(self):
-        self._cola    = ColaInsumos()
-        self._registro= RegistroDiario()
-        self._motor   = MotorISO28591()
-
-    # ── operaciones de cola ───────────────────────────────────────────────
-    def encolar_insumo(self, nombre: str, lote: int, tipo: str):
-        try:
-            insumo = Insumo(nombre, lote, tipo)
-            self._cola.encolar(insumo)
-            if insumo.es_critico():
-                print(f"  ALERTA: '{nombre}' es un insumo critico (nuevo, lote > 500).")
-        except (LoteInvalidoError, ProveedorInvalidoError, ValueError) as e:
-            print(f"  Error al encolar: {e}")
-
-    def cargar_casos_prueba(self):
-        print(f"  Cargando {len(self.CASOS_PRUEBA)} casos de prueba...")
-        for nombre, lote, tipo in self.CASOS_PRUEBA:
-            self.encolar_insumo(nombre, lote, tipo)
-        print(f"  Cola lista. Total en fila: {len(self._cola)}")
-
-    def mostrar_cola(self):
-        self._cola.mostrar()
-
-    def procesar_cola_completa(self):
-        if self._cola.esta_vacia():
-            print("  No hay insumos en la cola.")
-            return
-        total = len(self._cola)
-        print()
-        print("=" * 60)
-        print(f"   PROCESANDO COLA - {total} insumo(s)")
-        print("=" * 60)
-        contador = 0
-        while not self._cola.esta_vacia():
-            contador += 1
-            try:
-                insumo    = self._cola.desencolar()
-                resultado = self._motor.procesar(insumo)
-                self._registro.agregar(resultado)
-                print(f"\n  [{contador}/{total}] {insumo.nombre}")
-                self._mostrar_resultado(resultado)
-            except ColaVaciaError as e:
-                print(f"  {e}")
-                break
-            except RuntimeError as e:
-                print(f"  Error de procesamiento: {e}")
-        print(f"\n  Cola procesada. {contador} insumo(s) atendido(s).")
-
-    def _mostrar_resultado(self, resultado: ResultadoInspeccion):
-        r = resultado
-        print(f"  Nivel    : {r.insumo.proveedor.nivel} - {r.insumo.proveedor.descripcion_nivel}")
-        print(f"  Letra    : {r.letra_codigo} (ISO 2859-1 Tabla 1)")
-        if r.n_muestras == 0:
-            print(f"  Control  : SOLO INSPECCION")
-        else:
-            print(f"  Control  : INSPECCION + MUESTREO")
-            print(f"  Muestras : {r.n_muestras}")
-        if r.insumo.es_critico():
-            print(f"  CRITICO  : SI - requiere atencion prioritaria")
-        print("  " + "-" * 50)
-
-    # ── operaciones de lista ──────────────────────────────────────────────
-    def mostrar_registro(self):
-        self._registro.mostrar_completo()
-
-    def buscar_por_proveedor(self, tipo: str):
-        try:
-            resultados = self._registro.buscar_por_proveedor(tipo)
-            print(f"\n  Busqueda por proveedor '{tipo}': {len(resultados)} resultado(s)")
-            if resultados:
-                print(f"  {'Insumo':<22} {'Lote':>7}  {'Control':<22}  {'Muestras'}")
-                print("  " + "-" * 62)
-                for r in resultados:
-                    print(f"  {r.insumo.nombre:<22} {r.insumo.tamanio_lote:>7}  "
-                          f"{r.tipo_control:<22}  {r.n_muestras}")
-            if not resultados:
-                print(f"  No hay registros con proveedor '{tipo}'.")
-            # polimorfismo: el proveedor da su propia recomendacion
-            proveedor = crear_proveedor(tipo)
-            print(f"\n  Recomendacion: {proveedor.get_recomendacion()}")
-        except ProveedorInvalidoError as e:
-            print(f"  Error: {e}")
-
-    def filtrar_por_control(self, tipo_control: str):
-        resultados = self._registro.filtrar_por_control(tipo_control)
-        print(f"\n  Filtro '{tipo_control}': {len(resultados)} insumo(s)")
-        for r in resultados:
-            print(f"  - {r.insumo.nombre} (lote: {r.insumo.tamanio_lote}, "
-                  f"muestras: {r.n_muestras})")
-
-    def mostrar_ordenado_por_lote(self):
-        if self._registro.esta_vacio():
-            print("  El registro esta vacio.")
-            return
-        ordenados = self._registro.ordenar_por_lote()
-        print(f"\n  Lista ordenada por lote (mayor a menor):")
-        print(f"  {'Pos':<5} {'Insumo':<22} {'Lote':>8}  {'Proveedor':<18}  {'Control'}")
-        print("  " + "-" * 72)
-        for i, r in enumerate(ordenados, start=1):
-            print(f"  {i:<5} {r.insumo.nombre:<22} {r.insumo.tamanio_lote:>8}  "
-                  f"{r.insumo.proveedor.tipo:<18}  {r.tipo_control}")
-
-    def buscar_insumo_por_nombre(self, nombre: str):
-        try:
-            resultado = self._registro.buscar_por_nombre(nombre)
-            print(f"\n  Insumo encontrado:")
-            print(f"  {resultado.insumo.get_descripcion()}")
-            print(f"  Control : {resultado.tipo_control}")
-            print(f"  Detalle : {resultado.get_detalle()}")
-        except InsumoNoEncontradoError as e:
-            print(f"  {e}")
-
-    def mostrar_estadisticas(self):
-        self._registro.mostrar_estadisticas()
-
-    # ── propiedades para el menu ──────────────────────────────────────────
-    @property
-    def n_pendientes(self) -> int:
-        return len(self._cola)
-
-    @property
-    def n_procesados(self) -> int:
-        return len(self._registro)
-
-
-# =============================================================================
-# SECCION 12: MENUS
-# =============================================================================
-
-def ingresar_insumo_manual() -> tuple:
     print()
+    print("=" * 60)
+    print("  COLA DE INSUMOS PENDIENTES DE INSPECCIÓN")
+    print("=" * 60)
+
+    if len(cola_insumos_pendientes) == 0:
+        print("  La cola está vacía. No hay insumos en espera.")
+    else:
+        print(f"  Insumos en cola: {len(cola_insumos_pendientes)}")
+        print(f"  (Se atenderán en este orden — FIFO)")
+        print()
+        print(f"  {'Pos':<5} {'Insumo':<22} {'Lote':>7}  {'Proveedor'}")
+        print("  " + "-" * 52)
+
+
+        for i, insumo in enumerate(cola_insumos_pendientes, start=1):
+            print(
+                f"  {i:<5} "
+                f"{insumo['insumo']:<22} "
+                f"{insumo['tamanio_lote']:>7}  "
+                f"{insumo['tipo_proveedor']}"
+            )
+
+    print("=" * 60)
+
+
+def procesar_cola_completa():
+    """
+    FUNCIÓN DE COLA 4: Procesa todos los insumos de la cola uno por uno.
+
+    Vacía la cola completa, inspeccionando cada insumo en orden FIFO
+    y guardando cada resultado en la lista registro_diario.
+    """
+    if len(cola_insumos_pendientes) == 0:
+        print(" No hay insumos en la cola para procesar.")
+        return
+
+    total = len(cola_insumos_pendientes)
+    print()
+    print("=" * 60)
+    print(f" PROCESANDO COLA — {total} insumo(s) en fila")
+    print("=" * 60)
+
+    contador = 0
+    # Mientras haya insumos en la cola, los sacamos y procesamos
+    while len(cola_insumos_pendientes) > 0:
+        contador += 1
+        # Desencolar: sacar al primero (FIFO)
+        insumo = cola_insumos_pendientes.popleft()
+
+        print(f"\n  [{contador}/{total}] Procesando: {insumo['insumo']}...")
+
+        # Procesar el insumo con la lógica ISO 2859-1
+        resultado = procesar_insumo(
+            insumo["insumo"],
+            insumo["tamanio_lote"],
+            insumo["tipo_proveedor"]
+        )
+
+        if resultado:
+            mostrar_resultado(resultado)
+            # Guardar en la LISTA de registro diario
+            registro_diario.append(resultado)
+
+    print()
+    print(f"  ✔ Cola procesada. {contador} insumo(s) atendido(s).")
+
+
+# =============================================================================
+# SECCIÓN 4: FUNCIONES DE LA LISTA (registro diario)
+# =============================================================================
+
+def mostrar_registro_diario():
+    """
+    FUNCIÓN DE LISTA 1: Muestra todos los insumos procesados en la sesión.
+
+    Recorre la lista completa y muestra cada registro en formato tabla.
+    Operación: recorrido con enumerate().
+    """
+    print()
+    print("=" * 60)
+    print("   REGISTRO DIARIO DE INSUMOS PROCESADOS")
+    print("=" * 60)
+
+    if len(registro_diario) == 0:
+        print("  No se procesó ningún insumo en esta sesión.")
+    else:
+        print(f"  Total registros en lista: {len(registro_diario)}")
+        print()
+        print(f"  {'N°':<4} {'Insumo':<20} {'Lote':>6} {'Proveedor':<18} {'Control':<25} {'Muestras':>8}")
+        print("  " + "-" * 84)
+
+        for i, reg in enumerate(registro_diario, start=1):
+            print(
+                f"  {i:<4} "
+                f"{reg['insumo']:<20} "
+                f"{reg['tamanio_lote']:>6} "
+                f"{reg['tipo_proveedor']:<18} "
+                f"{reg['tipo_control']:<25} "
+                f"{reg['n_muestras']:>8}"
+            )
+
+    print("=" * 60)
+
+
+def buscar_en_lista_por_proveedor(tipo_proveedor):
+    """
+    FUNCIÓN DE LISTA 2: Busca en la lista todos los insumos de un tipo de proveedor.
+
+    Recorre la lista y filtra los registros que coincidan con el tipo buscado.
+    Operación: list comprehension con condición (filtrado).
+
+    Parámetros:
+        tipo_proveedor (str): El tipo a buscar ("nuevo", "prueba_industrial", "homologado")
+    """
+   
+    resultados = [reg for reg in registro_diario
+                  if reg["tipo_proveedor"] == tipo_proveedor]
+
+    print()
+    print(f"  Búsqueda en lista — Proveedor: '{tipo_proveedor}'")
+    print(f"  Registros encontrados: {len(resultados)}")
+
+    if resultados:
+        print()
+        print(f"  {'Insumo':<22} {'Lote':>7}  {'Control':<25}  {'Muestras':>8}")
+        print("  " + "-" * 68)
+        for reg in resultados:
+            print(
+                f"  {reg['insumo']:<22} "
+                f"{reg['tamanio_lote']:>7}  "
+                f"{reg['tipo_control']:<25}  "
+                f"{reg['n_muestras']:>8}"
+            )
+    else:
+        print(f"  No hay registros con tipo de proveedor '{tipo_proveedor}'.")
+
+
+def filtrar_lista_por_control(tipo_control):
+    """
+    FUNCIÓN DE LISTA 3: Filtra la lista por tipo de control aplicado.
+
+    Separa los insumos que requirieron solo INSPECCIÓN de los que
+    requirieron INSPECCIÓN + MUESTREO.
+    Operación: list comprehension con condición (filtrado).
+
+    Parámetros:
+        tipo_control (str): "SOLO INSPECCIÓN" o "INSPECCIÓN + MUESTREO"
+    """
+    filtrados = [reg for reg in registro_diario
+                 if reg["tipo_control"] == tipo_control]
+
+    print()
+    print(f"  Filtro en lista — Control: '{tipo_control}'")
+    print(f"  Insumos que aplican este control: {len(filtrados)}")
+
+    if filtrados:
+        for reg in filtrados:
+            print(f"    • {reg['insumo']} (lote: {reg['tamanio_lote']}, "
+                  f"proveedor: {reg['tipo_proveedor']}, "
+                  f"muestras: {reg['n_muestras']})")
+
+
+def ordenar_lista_por_lote():
+    """
+    FUNCIÓN DE LISTA 4: Muestra la lista ordenada por tamaño de lote (mayor a menor).
+
+    No modifica el registro_diario original — crea una copia ordenada.
+    Operación: sorted() con key= y reverse=True.
+    """
+    if len(registro_diario) == 0:
+        print(" La lista de registros está vacía.")
+        return
+
+    lista_ordenada = sorted(registro_diario,
+                            key=lambda reg: reg["tamanio_lote"],
+                            reverse=True)   # De mayor a menor lote
+
+    print()
+    print(" LISTA ORDENADA POR TAMAÑO DE LOTE (mayor → menor)")
+    print(f"  {'Pos':<5} {'Insumo':<22} {'Lote':>8}  {'Proveedor':<18}  {'Control'}")
+    print("  " + "-" * 75)
+
+    for i, reg in enumerate(lista_ordenada, start=1):
+        print(
+            f"  {i:<5} "
+            f"{reg['insumo']:<22} "
+            f"{reg['tamanio_lote']:>8}  "
+            f"{reg['tipo_proveedor']:<18}  "
+            f"{reg['tipo_control']}"
+        )
+
+
+def resumen_estadistico_lista():
+    """
+    FUNCIÓN DE LISTA 5: Genera un resumen estadístico del registro diario.
+
+    Calcula totales, promedios y conteos usando operaciones sobre la lista.
+    Operaciones: len(), sum(), max(), min(), list comprehension para conteo.
+    """
+    print()
+    print("=" * 60)
+    print(" RESUMEN ESTADÍSTICO DEL REGISTRO DIARIO")
+    print("=" * 60)
+
+    if len(registro_diario) == 0:
+        print("  No hay datos para generar el resumen.")
+        print("=" * 60)
+        return
+
+    total = len(registro_diario)
+
+    # Conteos por tipo de control (usando list comprehension)
+    solo_inspeccion   = len([r for r in registro_diario if r["tipo_control"] == "SOLO INSPECCIÓN"])
+    con_muestreo      = len([r for r in registro_diario if r["tipo_control"] == "INSPECCIÓN + MUESTREO"])
+
+    # Conteos por tipo de proveedor
+    nuevos        = len([r for r in registro_diario if r["tipo_proveedor"] == "nuevo"])
+    en_prueba     = len([r for r in registro_diario if r["tipo_proveedor"] == "prueba_industrial"])
+    homologados   = len([r for r in registro_diario if r["tipo_proveedor"] == "homologado"])
+
+    # Estadísticas de lotes
+    lotes = [r["tamanio_lote"] for r in registro_diario]
+    lote_max = max(lotes)
+    lote_min = min(lotes)
+    lote_prom = sum(lotes) / total
+
+    # Estadísticas de muestras (solo los que tienen muestreo)
+    muestras = [r["n_muestras"] for r in registro_diario if r["n_muestras"] > 0]
+    total_muestras = sum(muestras) if muestras else 0
+
+    print(f"  Total de insumos procesados   : {total}")
+    print()
+    print(f"  Por tipo de control:")
+    print(f"    Solo inspección             : {solo_inspeccion}")
+    print(f"    Inspección + Muestreo       : {con_muestreo}")
+    print()
+    print(f"  Por tipo de proveedor:")
+    print(f"    Nuevos                      : {nuevos}")
+    print(f"    En prueba industrial        : {en_prueba}")
+    print(f"    Homologados                 : {homologados}")
+    print()
+    print(f"  Estadísticas de lotes:")
+    print(f"    Lote más grande             : {lote_max} unidades")
+    print(f"    Lote más pequeño            : {lote_min} unidades")
+    print(f"    Promedio de lote            : {lote_prom:.1f} unidades")
+    print()
+    print(f"  Total de muestras a tomar     : {total_muestras}")
+    print("=" * 60)
+
+
+# =============================================================================
+# SECCIÓN 5: FUNCIONES DE PROCESAMIENTO (lógica ISO 2859-1)
+# =============================================================================
+
+def obtener_letra_codigo(tamanio_lote, nivel_inspeccion):
+    """
+    Busca la letra código en la Tabla 1 de la ISO 2859-1.
+
+    Parámetros:
+        tamanio_lote     (int): Número de unidades del lote recibido.
+        nivel_inspeccion (str): Nivel de inspección: "I", "II" o "III".
+
+    Retorna:
+        str: La letra código correspondiente (ej: "A", "B", ..., "R").
+             Retorna None si el lote está fuera del rango definido.
+    """
+    for (lote_min, lote_max), niveles in TABLA_LETRAS_CODIGO:
+        if lote_min <= tamanio_lote <= lote_max:
+            return niveles[nivel_inspeccion]
+    return None
+
+
+def obtener_numero_muestras(letra_codigo):
+    """
+    Obtiene el número de muestras a tomar según la Tabla 2 de la ISO 2859-1.
+
+    Parámetros:
+        letra_codigo (str): La letra código obtenida de la Tabla 1.
+
+    Retorna:
+        int: Número de muestras (0 = solo inspección, sin muestreo).
+    """
+    return TABLA_MUESTRAS.get(letra_codigo, 0)
+
+
+def determinar_nivel_inspeccion(tipo_proveedor):
+    """
+    Determina el nivel de inspección según el tipo de proveedor (ISO 2859-1).
+
+    Parámetros:
+        tipo_proveedor (str): "nuevo", "prueba_industrial" u "homologado"
+
+    Retorna:
+        tuple: (nivel, descripcion)
+    """
+    niveles = {
+        "nuevo":             ("III", "Reforzado  - Proveedor nuevo sin historial"),
+        "prueba_industrial":  ("II",  "Normal     - Proveedor en evaluación"),
+        "homologado":         ("I",   "Reducido   - Proveedor con historial confirmado"),
+    }
+    return niveles.get(tipo_proveedor, (None, "Tipo de proveedor no reconocido"))
+
+
+def procesar_insumo(nombre_insumo, tamanio_lote, tipo_proveedor):
+    """
+    Función principal de procesamiento: aplica la lógica ISO 2859-1
+    para determinar el tipo de control de calidad del insumo.
+
+    Parámetros:
+        nombre_insumo  (str): Nombre del insumo
+        tamanio_lote   (int): Tamaño del lote recibido
+        tipo_proveedor (str): Tipo de proveedor
+
+    Retorna:
+        dict: Resultado completo del análisis, o None si hay error.
+    """
+    # Paso 1: Nivel de inspección según tipo de proveedor
+    nivel, descripcion_nivel = determinar_nivel_inspeccion(tipo_proveedor)
+    if nivel is None:
+        print(f" ERROR: Tipo de proveedor '{tipo_proveedor}' no reconocido.")
+        return None
+
+    # Paso 2: Letra código desde Tabla 1
+    letra_codigo = obtener_letra_codigo(tamanio_lote, nivel)
+    if letra_codigo is None:
+        print(f" ERROR: Tamaño de lote {tamanio_lote} fuera de rango.")
+        return None
+
+    # Paso 3: Número de muestras desde Tabla 2
+    n_muestras = obtener_numero_muestras(letra_codigo)
+
+    # Paso 4: Tipo de control
+    if n_muestras == 0:
+        tipo_control = "SOLO INSPECCIÓN"
+        detalle = "Revisión documental e inspección física. No se requiere muestreo."
+    else:
+        tipo_control = "INSPECCIÓN + MUESTREO"
+        detalle = f"Se deben tomar {n_muestras} muestras para análisis de laboratorio."
+
+    resultado = {
+        "insumo":           nombre_insumo,
+        "tamanio_lote":     tamanio_lote,
+        "tipo_proveedor":   tipo_proveedor,
+        "nivel_inspeccion": f"Nivel {nivel} - {descripcion_nivel}",
+        "letra_codigo":     letra_codigo,
+        "n_muestras":       n_muestras,
+        "tipo_control":     tipo_control,
+        "detalle":          detalle,
+    }
+    return resultado
+
+
+def mostrar_resultado(resultado):
+    """
+    Muestra en pantalla el resultado del procesamiento de un insumo.
+    """
+    print()
+    print("-" * 60)
+    print(" RESULTADO DEL ANÁLISIS")
+    print("-" * 60)
+    print(f"  Insumo          : {resultado['insumo']}")
+    print(f"  Tamaño de lote  : {resultado['tamanio_lote']} unidades")
+    print(f"  Tipo proveedor  : {resultado['tipo_proveedor']}")
+    print(f"  Nivel inspección: {resultado['nivel_inspeccion']}")
+    print(f"  Letra código    : {resultado['letra_codigo']} (ISO 2859-1, Tabla 1)")
+    print()
+
+    if resultado["n_muestras"] == 0:
+        print("  ✅ CONTROL APLICABLE: SOLO INSPECCIÓN")
+        print(f"  → {resultado['detalle']}")
+    else:
+        print(" CONTROL APLICABLE: INSPECCIÓN + MUESTREO")
+        print(f"  → Número de muestras requeridas: {resultado['n_muestras']}")
+        print(f"  → {resultado['detalle']}")
+
+    print("-" * 60)
+
+
+def ingresar_insumo_manual():
+    """
+    Solicita los datos de un insumo al usuario con validaciones.
+
+    Retorna:
+        tuple: (nombre, lote, tipo_proveedor)
+    """
+    print()
+    print("  Ingrese los datos del insumo:")
+
     while True:
         nombre = input("  Nombre del insumo       : ").strip()
         if nombre:
             break
-        print("  El nombre no puede estar vacio.")
+        print(" El nombre no puede estar vacío.")
+
     while True:
         try:
-            lote = int(input("  Tamano del lote (unid.) : "))
+            lote = int(input("  Tamaño del lote (unid.) : "))
             if lote >= 2:
                 break
-            print("  El lote debe ser al menos 2.")
+            else:
+                print(" El lote debe ser de al menos 2 unidades.")
         except ValueError:
-            print("  Ingrese un numero entero valido.")
-    print("  Tipos validos: nuevo | prueba_industrial | homologado")
+            print(" Ingrese un número entero válido.")
+
+    tipos_validos = ["nuevo", "prueba_industrial", "homologado"]
+    print("  Tipos válidos: nuevo | prueba_industrial | homologado")
     while True:
         tipo = input("  Tipo de proveedor       : ").strip().lower()
-        if tipo in Proveedor.TIPOS_VALIDOS:
+        if tipo in tipos_validos:
             break
-        print(f"  Opciones validas: {', '.join(Proveedor.TIPOS_VALIDOS)}")
+        print(f" Opciones válidas: {', '.join(tipos_validos)}")
+
     return nombre, lote, tipo
 
 
-def submenu_cola(sistema: SistemaInspeccionGloria):
+# =============================================================================
+# SECCIÓN 6: CASOS DE PRUEBA PREDEFINIDOS
+# =============================================================================
+# Estos casos simulan situaciones reales de la planta Gloria S.A.
+# Se usan para poblar la cola y demostrar el flujo completo del sistema.
+
+CASOS_DE_PRUEBA = [
+    # (nombre_insumo,          tamanio_lote,  tipo_proveedor)
+    ("Leche en polvo",          500,           "nuevo"),
+    ("Azucar refinada",         1500,          "prueba_industrial"),
+    ("Envases tetra brik",      10000,         "homologado"),
+    ("Cultivo lactico",         20,            "nuevo"),
+    ("Estabilizante E471",      300,           "prueba_industrial"),
+    ("Sal yodada",              800,           "homologado"),
+]
+
+
+# =============================================================================
+# SECCIÓN 7: SUBMENÚS
+# =============================================================================
+
+def submenu_cola():
+    """
+    Submenú dedicado a las operaciones de la COLA de insumos pendientes.
+    """
     while True:
         print()
-        print("  GESTION DE COLA (FIFO)")
-        print("  1. Encolar insumo manualmente")
-        print("  2. Cargar casos de prueba")
-        print("  3. Ver cola actual")
-        print("  4. Procesar toda la cola")
-        print("  5. Volver")
-        opcion = input("\n  Opcion: ").strip()
+        print("  ┌─────────────────────────────────────────┐")
+        print("  │        GESTIÓN DE COLA (FIFO)           │")
+        print("  ├─────────────────────────────────────────┤")
+        print("  │  1. Encolar un insumo manualmente       │")
+        print("  │  2. Cargar casos de prueba a la cola    │")
+        print("  │  3. Ver cola actual (insumos en espera) │")
+        print("  │  4. Procesar toda la cola               │")
+        print("  │  5. Volver al menú principal            │")
+        print("  └─────────────────────────────────────────┘")
+        print()
+
+        opcion = input("  Seleccione una opción (1-5): ").strip()
+
         if opcion == "1":
-            try:
-                nombre, lote, tipo = ingresar_insumo_manual()
-                sistema.encolar_insumo(nombre, lote, tipo)
-            except Exception as e:
-                print(f"  Error inesperado: {e}")
+            nombre, lote, tipo = ingresar_insumo_manual()
+            encolar_insumo(nombre, lote, tipo)
+            input("\n  Presione ENTER para continuar...")
+
         elif opcion == "2":
-            sistema.cargar_casos_prueba()
+            print()
+            print(f"  Cargando {len(CASOS_DE_PRUEBA)} casos de prueba a la cola...")
+            for nombre, lote, tipo in CASOS_DE_PRUEBA:
+                encolar_insumo(nombre, lote, tipo)
+            print(f"\n  Cola cargada. Total en fila: {len(cola_insumos_pendientes)}")
+            input("\n  Presione ENTER para continuar...")
+
         elif opcion == "3":
-            sistema.mostrar_cola()
+            mostrar_cola()
+            input("\n  Presione ENTER para continuar...")
+
         elif opcion == "4":
-            sistema.procesar_cola_completa()
+            procesar_cola_completa()
+            input("\n  Presione ENTER para continuar...")
+
         elif opcion == "5":
             break
+
         else:
-            print("  Opcion no valida.")
-        input("\n  ENTER para continuar...")
+            print(" Opción no válida. Intente nuevamente.")
 
 
-def submenu_lista(sistema: SistemaInspeccionGloria):
+def submenu_lista():
+    """
+    Submenú dedicado a las operaciones de la LISTA (registro diario).
+    """
     while True:
         print()
-        print("  GESTION DE LISTA (REGISTRO DIARIO)")
-        print("  1. Ver registro completo")
-        print("  2. Buscar por tipo de proveedor")
-        print("  3. Filtrar por tipo de control")
-        print("  4. Ver lista ordenada por lote")
-        print("  5. Buscar insumo por nombre")
-        print("  6. Resumen estadistico")
-        print("  7. Volver")
-        opcion = input("\n  Opcion: ").strip()
+        print("  ┌──────────────────────────────────────────────┐")
+        print("  │       GESTIÓN DE LISTA (REGISTRO DIARIO)     │")
+        print("  ├──────────────────────────────────────────────┤")
+        print("  │  1. Ver registro completo                    │")
+        print("  │  2. Buscar por tipo de proveedor             │")
+        print("  │  3. Filtrar por tipo de control              │")
+        print("  │  4. Ver lista ordenada por tamaño de lote    │")
+        print("  │  5. Resumen estadístico                      │")
+        print("  │  6. Volver al menú principal                 │")
+        print("  └──────────────────────────────────────────────┘")
+        print()
+
+        opcion = input("  Seleccione una opción (1-6): ").strip()
+
         if opcion == "1":
-            sistema.mostrar_registro()
+            mostrar_registro_diario()
+            input("\n  Presione ENTER para continuar...")
+
         elif opcion == "2":
-            print("  Opciones: nuevo | prueba_industrial | homologado")
-            tipo = input("  Tipo a buscar: ").strip().lower()
-            sistema.buscar_por_proveedor(tipo)
+            tipos_validos = ["nuevo", "prueba_industrial", "homologado"]
+            print(f"  Opciones: {', '.join(tipos_validos)}")
+            tipo = input("  Tipo de proveedor a buscar: ").strip().lower()
+            buscar_en_lista_por_proveedor(tipo)
+            input("\n  Presione ENTER para continuar...")
+
         elif opcion == "3":
-            print("  Opciones: SOLO INSPECCION | INSPECCION + MUESTREO")
-            ctrl = input("  Control a filtrar: ").strip()
-            sistema.filtrar_por_control(ctrl)
+            print("  Opciones: SOLO INSPECCIÓN | INSPECCIÓN + MUESTREO")
+            ctrl = input("  Tipo de control a filtrar: ").strip().upper()
+            filtrar_lista_por_control(ctrl)
+            input("\n  Presione ENTER para continuar...")
+
         elif opcion == "4":
-            sistema.mostrar_ordenado_por_lote()
+            ordenar_lista_por_lote()
+            input("\n  Presione ENTER para continuar...")
+
         elif opcion == "5":
-            nombre = input("  Nombre del insumo: ").strip()
-            sistema.buscar_insumo_por_nombre(nombre)
+            resumen_estadistico_lista()
+            input("\n  Presione ENTER para continuar...")
+
         elif opcion == "6":
-            sistema.mostrar_estadisticas()
-        elif opcion == "7":
             break
+
         else:
-            print("  Opcion no valida.")
-        input("\n  ENTER para continuar...")
+            print(" Opción no válida. Intente nuevamente.")
+
+
+# =============================================================================
+# SECCIÓN 8: MENÚ PRINCIPAL
+# =============================================================================
+
+def mostrar_bienvenida():
+    """Muestra el encabezado del sistema."""
+    print("=" * 60)
+    print("   SISTEMA DE INSPECCIÓN DE INSUMOS - GLORIA S.A.")
+    print("   Basado en la Norma ISO 2859-1 / NTP-ISO 2859-1")
+    print("=" * 60)
+    print()
+    print("  Estructuras de datos activas:")
+    print("  • COLA  : insumos pendientes de inspección")
+    print("  • LISTA : registro histórico de insumos procesados")
+    print()
 
 
 def menu_principal():
-    print("=" * 60)
-    print("   SISTEMA DE INSPECCION DE INSUMOS - GLORIA S.A.")
-    print("   Norma ISO 2859-1 / NTP-ISO 2859-1")
-    print("   Version 3 - Programacion Orientada a Objetos")
-    print("=" * 60)
-
-    sistema = SistemaInspeccionGloria()
+    """
+    Menú principal del sistema. Gestiona la navegación entre módulos.
+    """
+    mostrar_bienvenida()
 
     while True:
         print()
-        print(f"  Cola: {sistema.n_pendientes} pendiente(s) | "
-              f"Lista: {sistema.n_procesados} procesado(s)")
+        print("  ╔══════════════════════════════════════════════════╗")
+        print("  ║           MENÚ PRINCIPAL                         ║")
+        print("  ╠══════════════════════════════════════════════════╣")
+        print(f"   Cola: {len(cola_insumos_pendientes)} pendiente(s) │ Lista: {len(registro_diario)} procesado(s)".ljust(51))
+        print("  ╠══════════════════════════════════════════════════╣")
+        print("  ║  1. Gestionar COLA de insumos (FIFO)             ║")
+        print("  ║  2. Consultar LISTA (registro diario)            ║")
+        print("  ║  3. Salir del sistema                            ║")
+        print("  ╚══════════════════════════════════════════════════╝")
         print()
-        print("  1. Gestionar COLA de insumos (FIFO)")
-        print("  2. Consultar LISTA (registro diario)")
-        print("  3. Salir")
 
-        opcion = input("\n  Opcion: ").strip()
-
+        opcion = input("  Seleccione una opción (1-3): ").strip()
+ 
         if opcion == "1":
-            submenu_cola(sistema)
+            submenu_cola()
+
         elif opcion == "2":
-            submenu_lista(sistema)
+            submenu_lista()
+
         elif opcion == "3":
             print()
-            print("  Resumen final de la sesion:")
-            sistema.mostrar_estadisticas()
-            print("  Sistema cerrado.")
+            print("  Generando resumen final de la sesión...")
+            resumen_estadistico_lista()
+            print()
+            print("  Sistema cerrado. ¡Hasta luego!")
             print("=" * 60)
             break
+
         else:
-            print("  Opcion no valida.")
+            print(" Opción no válida. Ingrese 1, 2 o 3.")
 
 
 # =============================================================================
-# PUNTO DE ENTRADA
+# SECCIÓN 9: PUNTO DE ENTRADA
 # =============================================================================
-
 
 if __name__ == "__main__":
     menu_principal()
